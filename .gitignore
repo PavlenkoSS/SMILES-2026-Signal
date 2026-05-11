@@ -1,1 +1,4 @@
 challenge.mat
+*.pt
+__pycache__/
+*.pyc
