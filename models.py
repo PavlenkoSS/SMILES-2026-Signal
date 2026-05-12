@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 
@@ -82,3 +84,59 @@ class CNNGRUCanceller(nn.Module):
         h = h.transpose(1, 2)  # (B, T, 128)
         h, _ = self.gru(h)     # (B, T, gru_hidden)
         return self.head(h)    # (B, T, 8)
+
+
+def sinusoidal_pe(length: int, d_model: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    """Standard sinusoidal positional encoding, shape (1, length, d_model)."""
+    position = torch.arange(length, device=device, dtype=dtype).unsqueeze(1)
+    div_term = torch.exp(
+        torch.arange(0, d_model, 2, device=device, dtype=dtype) * (-math.log(10000.0) / d_model)
+    )
+    pe = torch.zeros(length, d_model, device=device, dtype=dtype)
+    pe[:, 0::2] = torch.sin(position * div_term)
+    pe[:, 1::2] = torch.cos(position * div_term)
+    return pe.unsqueeze(0)
+
+
+class TransformerInterferenceCanceller(nn.Module):
+    """Encoder-only Transformer: TX time series -> per-timestep interference (8 real channels).
+
+    Uses full (non-causal) self-attention over the window, suitable for offline batch scoring.
+    """
+
+    def __init__(
+        self,
+        in_ch: int = 12,
+        out_ch: int = 8,
+        d_model: int = 128,
+        nhead: int = 8,
+        num_layers: int = 4,
+        dim_feedforward: int = 512,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        if d_model % nhead != 0:
+            raise ValueError("d_model must be divisible by nhead")
+        self.d_model = d_model
+        self.input_proj = nn.Linear(in_ch, d_model)
+        enc_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(
+            enc_layer, num_layers=num_layers, enable_nested_tensor=False
+        )
+        self.head = nn.Linear(d_model, out_ch)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, T, 12)
+        B, T, _ = x.shape
+        h = self.input_proj(x)
+        h = h + sinusoidal_pe(T, self.d_model, h.device, h.dtype)
+        h = self.encoder(h)
+        return self.head(h)

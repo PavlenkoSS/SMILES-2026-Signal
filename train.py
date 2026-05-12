@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from data_utils import load_data, make_datasets, complex_to_real
-from models import MLPInterferenceCanceller, CNNGRUCanceller
+from models import MLPInterferenceCanceller, CNNGRUCanceller, TransformerInterferenceCanceller
 
 
 FS = 7_680_000.0
@@ -78,7 +78,7 @@ def val_epoch(model, loader, device):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=["mlp", "cnngru"], default="cnngru")
+    parser.add_argument("--model", choices=["mlp", "cnngru", "transformer"], default="cnngru")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -95,6 +95,8 @@ def main():
 
     if args.device:
         device = torch.device(args.device)
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
     elif torch.backends.mps.is_available():
         device = torch.device("mps")
     else:
@@ -120,8 +122,10 @@ def main():
 
     if args.model == "mlp":
         model = MLPInterferenceCanceller(window_size=args.window_size)
-    else:
+    elif args.model == "cnngru":
         model = CNNGRUCanceller()
+    else:
+        model = TransformerInterferenceCanceller()
     model = model.to(device)
 
     param_count = sum(p.numel() for p in model.parameters())

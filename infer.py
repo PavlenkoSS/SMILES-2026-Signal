@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from data_utils import load_data, complex_to_real, real_to_complex
-from models import MLPInterferenceCanceller, CNNGRUCanceller
+from models import MLPInterferenceCanceller, CNNGRUCanceller, TransformerInterferenceCanceller
 
 
 def pick_inference_device(device: str | None) -> torch.device:
@@ -78,6 +78,9 @@ def load_and_infer(tx_n, rx, checkpoint="best_model.pt", model_type="cnngru",
     if model_type == "mlp":
         model = MLPInterferenceCanceller(window_size=chunk_size)
         pad_to_chunk = True
+    elif model_type == "transformer":
+        model = TransformerInterferenceCanceller()
+        pad_to_chunk = False
     else:
         model = CNNGRUCanceller()
         pad_to_chunk = False
@@ -103,7 +106,7 @@ def load_and_infer(tx_n, rx, checkpoint="best_model.pt", model_type="cnngru",
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=str, default="best_model.pt")
-    parser.add_argument("--model", choices=["mlp", "cnngru"], default="cnngru")
+    parser.add_argument("--model", choices=["mlp", "cnngru", "transformer"], default="cnngru")
     parser.add_argument("--chunk_size", type=int, default=8192)
     parser.add_argument("--overlap", type=int, default=256)
     parser.add_argument("--blend", type=float, default=0.0,
