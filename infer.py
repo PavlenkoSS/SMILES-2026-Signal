@@ -8,6 +8,22 @@ from data_utils import load_data, complex_to_real, real_to_complex
 from models import MLPInterferenceCanceller, CNNGRUCanceller
 
 
+def pick_inference_device(device: str | None) -> torch.device:
+    """Resolve torch device for inference: CUDA preferred when available."""
+    if device is not None and str(device).strip():
+        d = torch.device(str(device).strip())
+        if d.type == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("CUDA requested but torch.cuda.is_available() is False")
+        if d.type == "mps" and not torch.backends.mps.is_available():
+            raise RuntimeError("MPS requested but torch.backends.mps.is_available() is False")
+        return d
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def chunked_inference(model, tx_real, chunk_size=8192, overlap=256, device=None, pad_to_chunk=False):
     """Run model over full signal with Hann-windowed overlap-add."""
     if device is None:
@@ -49,12 +65,15 @@ def load_and_infer(tx_n, rx, checkpoint="best_model.pt", model_type="cnngru",
     
     blend_baseline: float in [0, 1]. If > 0, blend neural prediction with baseline:
         final_interference = (1-blend)*neural + blend*baseline_interference
+
+    device: torch.device or str. If None, uses CUDA if available, else MPS, else CPU.
     """
-    if device is None:
-        if torch.backends.mps.is_available():
-            device = torch.device("mps")
-        else:
-            device = torch.device("cpu")
+    if device is None or (isinstance(device, str) and not device.strip()):
+        device = pick_inference_device(None)
+    elif isinstance(device, str):
+        device = pick_inference_device(device)
+    else:
+        device = torch.device(device)
 
     if model_type == "mlp":
         model = MLPInterferenceCanceller(window_size=chunk_size)
@@ -89,15 +108,24 @@ def main():
     parser.add_argument("--overlap", type=int, default=256)
     parser.add_argument("--blend", type=float, default=0.0,
                         help="Blend factor with baseline (0=pure neural, 1=pure baseline)")
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="",
+        help="Torch device: cuda, cuda:0, cpu, mps, or empty for auto (cuda>mps>cpu)",
+    )
     args = parser.parse_args()
 
     print("Loading data...")
     tx_n, rx, Fs, N, helpers = load_data()
 
+    dev = pick_inference_device(args.device if args.device.strip() else None)
+    print(f"Using device: {dev}")
+
     print(f"Running inference (blend={args.blend})...")
     rx_hat = load_and_infer(tx_n, rx, checkpoint=args.checkpoint, model_type=args.model,
                             chunk_size=args.chunk_size, overlap=args.overlap,
-                            blend_baseline=args.blend, helpers=helpers)
+                            blend_baseline=args.blend, helpers=helpers, device=dev)
 
     print("\n=== Neural Model Score ===")
     reds, avg = helpers["score"](rx, rx_hat, label="neural")
