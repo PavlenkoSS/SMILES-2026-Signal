@@ -29,20 +29,19 @@ def _build_subset_matrix(
     use_cross=False,
     model_subset=MODEL_SUBSET,
 ):
-    raw_lists = []
-    raw_lists.append(fu.build_memory_polynomial_features(tx_n, lags, orders=orders_mem))
-    if use_conjugate:
-        raw_lists.append(fu.build_conjugate_features(tx_n, lags, orders=orders_conj))
-    if use_cross:
-        raw_lists.append(fu.build_cross_channel_features(tx_n, lags))
-    raw_feats = [f for group in raw_lists for f in group]
-
+    n_tx = tx_n.shape[1]
+    n_feat = fu.count_feature_columns(
+        n_tx, lags, orders_mem, orders_conj, use_conjugate, use_cross
+    )
     sl = model_subset
     n_sub = sl.stop - sl.start
-    n_feat = len(raw_feats)
     X = np.zeros((n_sub, n_feat), dtype=np.complex128)
 
-    for j, raw in enumerate(raw_feats):
+    for j, raw in enumerate(
+        fu.iter_all_raw_features(
+            tx_n, lags, orders_mem, orders_conj, use_conjugate, use_cross
+        )
+    ):
         filt = bp(raw.astype(np.complex128, copy=False))
         X[:, j] = filt[sl]
         del raw
@@ -51,21 +50,31 @@ def _build_subset_matrix(
     return X, n_feat
 
 
-def _raw_feature_groups(
+def predict_poly_from_weights_batch(
     tx_n,
+    bp,
     lags,
+    W_list,
     orders_mem=(1, 3, 5),
     orders_conj=(1, 3),
     use_conjugate=True,
     use_cross=False,
 ):
-    raw_lists = []
-    raw_lists.append(fu.build_memory_polynomial_features(tx_n, lags, orders=orders_mem))
-    if use_conjugate:
-        raw_lists.append(fu.build_conjugate_features(tx_n, lags, orders=orders_conj))
-    if use_cross:
-        raw_lists.append(fu.build_cross_channel_features(tx_n, lags))
-    return raw_lists
+    n_samples = tx_n.shape[0]
+    preds = [
+        np.zeros((n_samples, 4), dtype=np.complex128) for _ in range(len(W_list))
+    ]
+    for j, raw in enumerate(
+        fu.iter_all_raw_features(
+            tx_n, lags, orders_mem, orders_conj, use_conjugate, use_cross
+        )
+    ):
+        col = bp(raw.astype(np.complex128, copy=False))
+        for wi, W in enumerate(W_list):
+            preds[wi] += np.outer(col, W[j, :])
+        del raw
+        del col
+    return preds
 
 
 def _solve_ridge(G, B, lam):

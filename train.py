@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from data_utils import load_data, make_datasets, complex_to_real
+from device_utils import configure_cuda_for_training, pick_torch_device
 from models import MLPInterferenceCanceller, CNNGRUCanceller, TransformerInterferenceCanceller
 
 
@@ -38,8 +39,9 @@ def train_epoch(model, loader, optimizer, rx_real_all, alpha, beta, gamma, devic
     total_loss = 0.0
     n = 0
     for tx_win, target_win in loader:
-        tx_win = tx_win.to(device)
-        target_win = target_win.to(device)
+        nb = device.type == "cuda"
+        tx_win = tx_win.to(device, non_blocking=nb)
+        target_win = target_win.to(device, non_blocking=nb)
 
         pred = model(tx_win)
         mse = nn.functional.mse_loss(pred, target_win)
@@ -67,8 +69,9 @@ def val_epoch(model, loader, device):
     total_mse = 0.0
     n = 0
     for tx_win, target_win in loader:
-        tx_win = tx_win.to(device)
-        target_win = target_win.to(device)
+        nb = device.type == "cuda"
+        tx_win = tx_win.to(device, non_blocking=nb)
+        target_win = target_win.to(device, non_blocking=nb)
         pred = model(tx_win)
         mse = nn.functional.mse_loss(pred, target_win)
         total_mse += mse.item() * tx_win.shape[0]
@@ -89,18 +92,18 @@ def main():
     parser.add_argument("--gamma", type=float, default=1e-4)
     parser.add_argument("--checkpoint", type=str, default="best_model.pt")
     parser.add_argument("--device", type=str, default="")
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=0,
+        help="DataLoader workers; >0 can help pipeline data on Linux+CUDA (default 0)",
+    )
     parser.add_argument("--enhanced", action="store_true",
                         help="Use enhanced target (baseline + rank1)")
     args = parser.parse_args()
 
-    if args.device:
-        device = torch.device(args.device)
-    elif torch.cuda.is_available():
-        device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
+    device = pick_torch_device(args.device if args.device.strip() else None)
+    configure_cuda_for_training(device)
     print(f"Using device: {device}")
 
     print("Loading data...")
@@ -116,9 +119,21 @@ def main():
     )
     print(f"Train windows: {len(train_ds)}, Val windows: {len(val_ds)}")
 
-    pin = (device.type == "cuda")
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=pin)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=0, pin_memory=pin)
+    pin = device.type == "cuda"
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=pin,
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=pin,
+    )
 
     if args.model == "mlp":
         model = MLPInterferenceCanceller(window_size=args.window_size)

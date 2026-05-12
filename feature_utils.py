@@ -23,29 +23,34 @@ def build_lagged_features(tx_n, lags):
 
 
 def build_memory_polynomial_features(tx_n, lags, orders=(1, 3, 5)):
-    """x[n-k], x[n-k]*|x[n-k]|^2, x[n-k]*|x[n-k]|^4 for orders (1,3,5) amplitudes."""
+    """Iterator over x[n-k], x[n-k]*|x[n-k]|^2, ... (memory-efficient)."""
+    return iter_memory_polynomial_features(tx_n, lags, orders=orders)
+
+
+def iter_memory_polynomial_features(tx_n, lags, orders=(1, 3, 5)):
     n_tx = tx_n.shape[1]
-    feats = []
     for c in range(n_tx):
         for lag in lags:
             z = shift_signal(tx_n[:, c], lag)
             a2 = np.abs(z) ** 2
             for order in orders:
                 if order == 1:
-                    feats.append(z)
+                    yield z
                 elif order == 3:
-                    feats.append(z * a2)
+                    yield z * a2
                 elif order == 5:
-                    feats.append(z * (a2**2))
+                    yield z * (a2**2)
                 else:
                     raise ValueError(f"Unsupported order {order}")
-    return feats
 
 
 def build_conjugate_features(tx_n, lags, orders=(1, 3)):
-    """conj(x[n-k]), conj(x[n-k])*|x[n-k]|^2."""
+    """Iterator over conj-based terms."""
+    return iter_conjugate_features(tx_n, lags, orders=orders)
+
+
+def iter_conjugate_features(tx_n, lags, orders=(1, 3)):
     n_tx = tx_n.shape[1]
-    feats = []
     for c in range(n_tx):
         for lag in lags:
             z = shift_signal(tx_n[:, c], lag)
@@ -53,18 +58,20 @@ def build_conjugate_features(tx_n, lags, orders=(1, 3)):
             a2 = np.abs(z) ** 2
             for order in orders:
                 if order == 1:
-                    feats.append(zc)
+                    yield zc
                 elif order == 3:
-                    feats.append(zc * a2)
+                    yield zc * a2
                 else:
                     raise ValueError(f"Unsupported order {order}")
-    return feats
 
 
 def build_cross_channel_features(tx_n, lags):
-    """x_i[n-k] * |x_j[n-k]|^2 for i != j."""
+    """Iterator over cross-channel terms."""
+    return iter_cross_channel_features(tx_n, lags)
+
+
+def iter_cross_channel_features(tx_n, lags):
     n_tx = tx_n.shape[1]
-    feats = []
     for i in range(n_tx):
         for j in range(n_tx):
             if i == j:
@@ -72,8 +79,28 @@ def build_cross_channel_features(tx_n, lags):
             for lag in lags:
                 zi = shift_signal(tx_n[:, i], lag)
                 zj = shift_signal(tx_n[:, j], lag)
-                feats.append(zi * (np.abs(zj) ** 2))
-    return feats
+                yield zi * (np.abs(zj) ** 2)
+
+
+def count_feature_columns(
+    n_tx, lags, orders_mem, orders_conj, use_conjugate, use_cross
+):
+    F = n_tx * len(lags) * len(orders_mem)
+    if use_conjugate:
+        F += n_tx * len(lags) * len(orders_conj)
+    if use_cross:
+        F += n_tx * (n_tx - 1) * len(lags)
+    return F
+
+
+def iter_all_raw_features(
+    tx_n, lags, orders_mem, orders_conj, use_conjugate, use_cross
+):
+    yield from iter_memory_polynomial_features(tx_n, lags, orders=orders_mem)
+    if use_conjugate:
+        yield from iter_conjugate_features(tx_n, lags, orders=orders_conj)
+    if use_cross:
+        yield from iter_cross_channel_features(tx_n, lags)
 
 
 def bandpass_stack(feat_list, score_filter):

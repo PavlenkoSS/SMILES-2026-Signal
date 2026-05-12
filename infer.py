@@ -5,23 +5,10 @@ import numpy as np
 import torch
 
 from data_utils import load_data, complex_to_real, real_to_complex
+from device_utils import pick_torch_device
 from models import MLPInterferenceCanceller, CNNGRUCanceller, TransformerInterferenceCanceller
 
-
-def pick_inference_device(device: str | None) -> torch.device:
-    """Resolve torch device for inference: CUDA preferred when available."""
-    if device is not None and str(device).strip():
-        d = torch.device(str(device).strip())
-        if d.type == "cuda" and not torch.cuda.is_available():
-            raise RuntimeError("CUDA requested but torch.cuda.is_available() is False")
-        if d.type == "mps" and not torch.backends.mps.is_available():
-            raise RuntimeError("MPS requested but torch.backends.mps.is_available() is False")
-        return d
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
+pick_inference_device = pick_torch_device  # backward-compatible name
 
 
 def chunked_inference(model, tx_real, chunk_size=8192, overlap=256, device=None, pad_to_chunk=False):
@@ -48,7 +35,9 @@ def chunked_inference(model, tx_real, chunk_size=8192, overlap=256, device=None,
                 pad_len = chunk_size - actual_len
                 chunk_data = np.pad(chunk_data, ((0, pad_len), (0, 0)), mode='constant')
 
-            chunk = torch.from_numpy(chunk_data).unsqueeze(0).to(device)
+            chunk = torch.from_numpy(chunk_data).unsqueeze(0).to(
+                device, non_blocking=(device.type == "cuda")
+            )
             pred = model(chunk).squeeze(0).cpu().numpy()
 
             w = np.hanning(actual_len).reshape(-1, 1).astype(np.float32)
