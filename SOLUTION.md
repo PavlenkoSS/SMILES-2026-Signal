@@ -55,6 +55,13 @@ The solution (`applicant_solution.py`) is a two-stage pipeline:
 | Per-channel dB | [3.98, 4.86, 3.49, 3.74] | [7.84, 6.39, 7.98, 5.21] |
 | Explainability valid | — | Yes (0.951) |
 
+### Summary plot (cluster runs)
+
+Bar chart of best-per-family metrics results (explainability and dB where valid). 
+
+![Best per family: explainability and dB](results_plot.png)
+
+
 ## Experiments and failed attempts
 
 ### Methods that worked but scored lower
