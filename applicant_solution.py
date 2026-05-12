@@ -1,15 +1,17 @@
 import json
-import gdown
+import os
 
 import numpy as np
 from scipy.io import loadmat
 
 from task_and_baseline import baseline, build_task_helpers
 
-# Download the dataset
-url = "https://drive.google.com/file/d/1BBHVSI4KB-B8OX46eN1Nm4ARCeq6Rui4/view?usp=sharing"
 downloaded_file = "challenge.mat"
-gdown.download(url, downloaded_file, quiet=False, fuzzy=True)
+if not os.path.isfile(downloaded_file):
+    import gdown
+
+    url = "https://drive.google.com/file/d/1BBHVSI4KB-B8OX46eN1Nm4ARCeq6Rui4/view?usp=sharing"
+    gdown.download(url, downloaded_file, quiet=False, fuzzy=True)
 
 data = loadmat("challenge.mat", simplify_cells=True)
 tx = data["tx"].astype(np.complex128)
@@ -22,8 +24,25 @@ helpers = build_task_helpers(tx_n, Fs, N)
 
 
 def your_canceller(tx_n, rx):
-    """Release placeholder: applicants should replace this with their own method."""
-    return baseline(tx_n, rx, helpers["fit_tx_prediction"])
+    """Ridge memory polynomial on baseline residual + rank-1 grid (validity-aware)."""
+    from rank1_sic import grid_search_rank1_alpha
+    from ridge_sic import grid_search_ridge_lambda
+
+    lags = list(range(-16, 17))
+    rx_mid, _, _ = grid_search_ridge_lambda(
+        tx_n,
+        rx,
+        helpers,
+        lags,
+        Fs,
+        lambdas=(1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3),
+        orders_mem=(1, 3, 5),
+        orders_conj=(1, 3),
+        use_conjugate=True,
+        use_cross=False,
+    )
+    rx_hat, _, _ = grid_search_rank1_alpha(rx, rx_mid, helpers)
+    return rx_hat
 
 
 print("\n=== Baseline ===")

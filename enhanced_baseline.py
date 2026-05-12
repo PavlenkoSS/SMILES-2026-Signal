@@ -91,4 +91,4 @@ if __name__ == "__main__":
 
     print("\n=== Searching lambda for rank-1 enhancement ===")
     best_lam, best_avg = search_lambda(tx_n, rx, helpers,
-                                        lambdas=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+                                        lambdas=[1.0, 2.0, 5.0, 10.0, 50.0, 100.0])
