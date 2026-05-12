@@ -1,6 +1,7 @@
 """Alternate ridge refit on cleaned RX and rank-1 subtraction."""
-from rank1_sic import grid_search_rank1_alpha
-from ridge_sic import fit_ridge_weights, predict_poly_from_weights
+from . import feature_utils as fu
+from .rank1_sic import grid_search_rank1_alpha
+from .ridge_sic import fit_ridge_weights, predict_poly_from_weights
 
 
 def alternating_canceller(
@@ -16,6 +17,8 @@ def alternating_canceller(
     orders_conj=(1, 3),
     use_conjugate=True,
     use_cross=False,
+    cross_kinds=fu.DEFAULT_CROSS_KINDS,
+    cross_lag_deltas=fu.DEFAULT_CROSS_LAG_DELTAS,
 ):
     if lags is None:
         lags = list(range(-16, 17))
@@ -38,6 +41,8 @@ def alternating_canceller(
             orders_conj=orders_conj,
             use_conjugate=use_conjugate,
             use_cross=use_cross,
+            cross_kinds=cross_kinds,
+            cross_lag_deltas=cross_lag_deltas,
         )
         poly = predict_poly_from_weights(
             tx_n,
@@ -48,6 +53,8 @@ def alternating_canceller(
             orders_conj,
             use_conjugate,
             use_cross,
+            cross_kinds,
+            cross_lag_deltas,
         )
         rx_curr = rx_curr - poly
 

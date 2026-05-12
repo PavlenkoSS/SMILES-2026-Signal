@@ -24,18 +24,18 @@ helpers = build_task_helpers(tx_n, Fs, N)
 
 
 def your_canceller(tx_n, rx):
-    """Ridge memory polynomial on baseline residual + rank-1 grid (validity-aware)."""
-    from rank1_sic import grid_search_rank1_alpha
-    from ridge_sic import grid_search_ridge_lambda
+    """Ridge (lambda=1e-3, lags ±16) + rank-1 alpha grid search."""
+    from methods.rank1_sic import grid_search_rank1_alpha
+    from methods.ridge_sic import ridge_canceller
 
     lags = list(range(-16, 17))
-    rx_mid, _, _ = grid_search_ridge_lambda(
+    rx_mid = ridge_canceller(
         tx_n,
         rx,
         helpers,
         lags,
         Fs,
-        lambdas=(1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3),
+        ridge_lambda=1e-3,
         orders_mem=(1, 3, 5),
         orders_conj=(1, 3),
         use_conjugate=True,

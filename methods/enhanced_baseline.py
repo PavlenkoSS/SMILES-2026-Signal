@@ -7,7 +7,7 @@ improve the score while keeping validity (the scorer already accounts for it).
 import numpy as np
 from scipy.signal import convolve, firwin
 
-from data_utils import load_data
+from .data_utils import load_data
 from task_and_baseline import baseline, build_task_helpers
 
 
@@ -33,31 +33,31 @@ def rank1_from_band_matrix(band_matrix):
 
 
 def enhanced_canceller(tx_n, rx, helpers, lambda_rank1=1.0):
-    """Baseline + conservative rank-1 removal.
-    
-    lambda_rank1: scaling for rank-1 subtraction [0, 1].
+    """Baseline + scorer-aligned rank-1 removal.
+
+    After subtracting tx_pred we simulate the scorer's decomposition on the
+    *provisional* removed component (tx_pred alone) to find the rank-1 that
+    the scorer would extract, then subtract it so the final removed component
+    is fully explainable.
     """
     fit_tx = helpers["fit_tx_prediction"]
     score_filter = helpers["score_filter"]
 
-    # Standard baseline: subtract TX-dependent interference
     tx_pred = fit_tx(rx)
     rx_after_bl = rx - tx_pred
 
     if lambda_rank1 <= 0.0:
         return rx_after_bl
 
-    # Compute bandpass-filtered residual
-    residual_band = np.column_stack(
-        [score_filter(rx_after_bl[:, ch]) for ch in range(rx_after_bl.shape[1])]
+    # Mimic scorer decomposition on the provisional removed component
+    removed_band = np.column_stack(
+        [score_filter(tx_pred[:, ch]) for ch in range(tx_pred.shape[1])]
     )
+    tx_refit = fit_tx(tx_pred)
+    scorer_residual = removed_band - tx_refit
+    rank1 = rank1_from_band_matrix(scorer_residual)
 
-    # Extract rank-1 component
-    rank1 = rank1_from_band_matrix(residual_band)
-
-    # Subtract scaled rank-1 component
     rx_hat = rx_after_bl - lambda_rank1 * rank1
-
     return rx_hat
 
 
@@ -85,10 +85,10 @@ if __name__ == "__main__":
     print("Loading data...")
     tx_n, rx, Fs, N, helpers = load_data()
 
-    print("\n=== Standard Baseline ===")
-    rx_bl = baseline(tx_n, rx, helpers["fit_tx_prediction"])
-    helpers["score"](rx, rx_bl, label="baseline")
+    # print("\n=== Standard Baseline ===")
+    # rx_bl = baseline(tx_n, rx, helpers["fit_tx_prediction"])
+    # helpers["score"](rx, rx_bl, label="baseline")
 
     print("\n=== Searching lambda for rank-1 enhancement ===")
     best_lam, best_avg = search_lambda(tx_n, rx, helpers,
-                                        lambdas=[1.0, 2.0, 5.0, 10.0, 50.0, 100.0])
+                                        lambdas=[1.0, 2.0, 5.0])

@@ -1,6 +1,14 @@
 """TX-derived feature builders for SIC (lags, memory polynomial, conjugate, cross)."""
 import numpy as np
 
+# Cross-channel feature kind names (used in CLI and iterators).
+CROSS_KIND_IJ_MAG2 = "ij_mag2"
+CROSS_KIND_IJ_MAG4 = "ij_mag4"
+CROSS_KIND_CONJ_IJ_MAG2 = "conj_ij_mag2"
+CROSS_KIND_CONJ_IJ_MAG4 = "conj_ij_mag4"
+DEFAULT_CROSS_KINDS = (CROSS_KIND_IJ_MAG2,)
+DEFAULT_CROSS_LAG_DELTAS = (0,)
+
 
 def shift_signal(x, k):
     y = np.zeros_like(x)
@@ -49,7 +57,7 @@ def build_conjugate_features(tx_n, lags, orders=(1, 3)):
     return iter_conjugate_features(tx_n, lags, orders=orders)
 
 
-def iter_conjugate_features(tx_n, lags, orders=(1, 3)):
+def iter_conjugate_features(tx_n, lags, orders=(1, 3, 5)):
     n_tx = tx_n.shape[1]
     for c in range(n_tx):
         for lag in lags:
@@ -61,16 +69,32 @@ def iter_conjugate_features(tx_n, lags, orders=(1, 3)):
                     yield zc
                 elif order == 3:
                     yield zc * a2
+                elif order == 5:
+                    yield zc * (a2**2)
                 else:
-                    raise ValueError(f"Unsupported order {order}")
+                    raise ValueError(f"Unsupported conj order {order}")
 
 
-def build_cross_channel_features(tx_n, lags):
-    """Iterator over cross-channel terms."""
-    return iter_cross_channel_features(tx_n, lags)
+def _cross_term(zi, zj, kind: str):
+    mag2 = np.abs(zj) ** 2
+    mag4 = mag2**2
+    if kind == CROSS_KIND_IJ_MAG2:
+        return zi * mag2
+    if kind == CROSS_KIND_IJ_MAG4:
+        return zi * mag4
+    if kind == CROSS_KIND_CONJ_IJ_MAG2:
+        return np.conj(zi) * mag2
+    if kind == CROSS_KIND_CONJ_IJ_MAG4:
+        return np.conj(zi) * mag4
+    raise ValueError(f"Unknown cross kind {kind!r}")
 
 
-def iter_cross_channel_features(tx_n, lags):
+def iter_cross_channel_features(tx_n, lags, kinds=None, lag_deltas=None):
+    """Cross-channel terms: z_i at lag k, z_j at lag k+delta (per plan)."""
+    if kinds is None:
+        kinds = DEFAULT_CROSS_KINDS
+    if lag_deltas is None:
+        lag_deltas = DEFAULT_CROSS_LAG_DELTAS
     n_tx = tx_n.shape[1]
     for i in range(n_tx):
         for j in range(n_tx):
@@ -78,29 +102,53 @@ def iter_cross_channel_features(tx_n, lags):
                 continue
             for lag in lags:
                 zi = shift_signal(tx_n[:, i], lag)
-                zj = shift_signal(tx_n[:, j], lag)
-                yield zi * (np.abs(zj) ** 2)
+                for delta in lag_deltas:
+                    zj = shift_signal(tx_n[:, j], lag + int(delta))
+                    for kind in kinds:
+                        yield _cross_term(zi, zj, kind)
+
+
+def count_cross_columns(n_tx, lags, kinds, lag_deltas):
+    if not kinds:
+        return 0
+    return n_tx * (n_tx - 1) * len(lags) * len(lag_deltas) * len(kinds)
 
 
 def count_feature_columns(
-    n_tx, lags, orders_mem, orders_conj, use_conjugate, use_cross
+    n_tx,
+    lags,
+    orders_mem,
+    orders_conj,
+    use_conjugate,
+    use_cross,
+    cross_kinds=DEFAULT_CROSS_KINDS,
+    cross_lag_deltas=DEFAULT_CROSS_LAG_DELTAS,
 ):
     F = n_tx * len(lags) * len(orders_mem)
     if use_conjugate:
         F += n_tx * len(lags) * len(orders_conj)
     if use_cross:
-        F += n_tx * (n_tx - 1) * len(lags)
+        F += count_cross_columns(n_tx, lags, cross_kinds, cross_lag_deltas)
     return F
 
 
 def iter_all_raw_features(
-    tx_n, lags, orders_mem, orders_conj, use_conjugate, use_cross
+    tx_n,
+    lags,
+    orders_mem,
+    orders_conj,
+    use_conjugate,
+    use_cross,
+    cross_kinds=DEFAULT_CROSS_KINDS,
+    cross_lag_deltas=DEFAULT_CROSS_LAG_DELTAS,
 ):
     yield from iter_memory_polynomial_features(tx_n, lags, orders=orders_mem)
     if use_conjugate:
         yield from iter_conjugate_features(tx_n, lags, orders=orders_conj)
     if use_cross:
-        yield from iter_cross_channel_features(tx_n, lags)
+        yield from iter_cross_channel_features(
+            tx_n, lags, kinds=cross_kinds, lag_deltas=cross_lag_deltas
+        )
 
 
 def bandpass_stack(feat_list, score_filter):

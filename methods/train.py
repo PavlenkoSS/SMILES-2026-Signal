@@ -7,9 +7,9 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from data_utils import load_data, make_datasets, complex_to_real
-from device_utils import configure_cuda_for_training, pick_torch_device
-from models import MLPInterferenceCanceller, CNNGRUCanceller, TransformerInterferenceCanceller
+from .data_utils import load_data, make_datasets, complex_to_real
+from .device_utils import configure_cuda_for_training, pick_torch_device
+from .models import MLPInterferenceCanceller, CNNGRUCanceller, TransformerInterferenceCanceller
 
 
 FS = 7_680_000.0

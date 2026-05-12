@@ -2,3 +2,9 @@ challenge.mat
 *.pt
 __pycache__/
 *.pyc
+visualization/*
+runs/*
+cluster_batches/*
+sbatch_logs/*
+.ipynb_checkpoints/*
+cluster/*
