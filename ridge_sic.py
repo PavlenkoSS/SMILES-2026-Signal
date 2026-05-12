@@ -107,36 +107,6 @@ def predict_poly_from_weights(
     return preds
 
 
-def predict_poly_from_weights_batch(
-    tx_n,
-    bp,
-    lags,
-    W_list,
-    orders_mem=(1, 3, 5),
-    orders_conj=(1, 3),
-    use_conjugate=True,
-    use_cross=False,
-):
-    raw_feats = [
-        f
-        for group in _raw_feature_groups(
-            tx_n, lags, orders_mem, orders_conj, use_conjugate, use_cross
-        )
-        for f in group
-    ]
-    n_samples = tx_n.shape[0]
-    preds = [
-        np.zeros((n_samples, 4), dtype=np.complex128) for _ in range(len(W_list))
-    ]
-    for j, raw in enumerate(raw_feats):
-        col = bp(raw.astype(np.complex128, copy=False))
-        for wi, W in enumerate(W_list):
-            preds[wi] += np.outer(col, W[j, :])
-        del raw
-        del col
-    return preds
-
-
 def fit_ridge_weights(
     tx_n,
     rx_residual,
